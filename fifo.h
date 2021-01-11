@@ -36,52 +36,47 @@ extern "C" {
 #endif /* defined(__cplusplus) */
 
 struct lock_free_fifo {
-	unsigned reserve_write;      /**< Reserved write position to multi thread write */
 	unsigned write;              /**< Next position to be written*/
 	unsigned read;               /**< Next position to be read */
 	unsigned len;                /**< Circular buffer length */
 	void *volatile buffer[];     /**< Buffer contains pointers */
 };
 
-static inline void
+static inline int
 lock_free_fifo_init(struct lock_free_fifo *fifo, unsigned size)
 {
 	/* Ensure size is power of 2 */
 	if (size & (size - 1))
-		return;
+		return -1;
 
-	fifo->write = fifo->reserve_write = 0;
+	fifo->write = 0;
 	fifo->read = 0;
 	fifo->len = size;
+	return 0;
 }
 
+/**
+ * Adds num elements into the fifo in case when we have one writing thread.
+ * Return the number actually written.
+ */
 static inline unsigned
 lock_free_fifo_put(struct lock_free_fifo *fifo, void **data, unsigned num)
 {
-	unsigned reserve_write;
-	unsigned next_reserve_write;
-	unsigned fifo_read;
-	unsigned diff;
+	unsigned i = 0;
+	unsigned fifo_write = fifo->write;
+	unsigned new_write = fifo_write;
+	unsigned fifo_read = pm_atomic_load_explicit(&fifo->read, pm_memory_order_acquire);
 
-	num = (num < fifo->len ? num : fifo->len - 1);
-	do {
-		fifo_read = pm_atomic_load(&fifo->read);
-		reserve_write = pm_atomic_load(&fifo->reserve_write);
-		diff = (fifo_read - reserve_write - 1) & (fifo->len - 1);
-		num = (num < diff ? num : diff);
-		next_reserve_write = (reserve_write + num) & (fifo->len - 1);
-		if (num == 0)
-			return 0;
-	} while (!pm_atomic_compare_exchange_strong(&fifo->reserve_write,
-			&reserve_write, next_reserve_write));
+	for (i = 0; i < num; i++) {
+		new_write = (new_write + 1) & (fifo->len - 1);
 
-	unsigned i, j;
-	for (i = reserve_write, j = 0; j < num; i = (i + 1) & (fifo->len - 1), j++)
-		fifo->buffer[i] = data[j];
-	while (pm_atomic_load(&fifo->write) != reserve_write)
-		;
-	pm_atomic_store(&fifo->write, next_reserve_write);
-	return num;
+		if (new_write == fifo_read)
+			break;
+		fifo->buffer[fifo_write] = data[i];
+		fifo_write = new_write;
+	}
+	pm_atomic_store_explicit(&fifo->write, fifo_write, pm_memory_order_release);
+	return i;
 }
 
 /**
@@ -93,6 +88,7 @@ lock_free_fifo_get(struct lock_free_fifo *fifo, void **data, unsigned num)
 	unsigned i = 0;
 	unsigned new_read = fifo->read;
 	unsigned fifo_write = pm_atomic_load_explicit(&fifo->write, pm_memory_order_acquire);
+
 	for (i = 0; i < num; i++) {
 		if (new_read == fifo_write)
 			break;
