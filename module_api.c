@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <assert.h>
+#include <fcntl.h>
+#include <errno.h>
+
 
 struct xtm_queue {
 	struct lock_free_fifo *fifo;
@@ -30,6 +33,9 @@ xtm_create(unsigned size)
 	if (queue->fifo == NULL)
 		goto fail_alloc_fifo;
 	if (pipe(queue->filedes) < 0)
+		goto fail_alloc_fd;
+	if (fcntl(queue->filedes[0], F_SETFL, O_NONBLOCK) < 0 ||
+	    fcntl(queue->filedes[0], F_SETFL, O_NONBLOCK) < 0)
 		goto fail_alloc_fd;
 	if (lock_free_fifo_init(queue->fifo, size) < 0)
 		goto fail_fifo_init;
@@ -75,6 +81,12 @@ xtm_msg_send(struct xtm_queue *queue, void *msg)
 unsigned
 xtm_msg_recv(struct xtm_queue *queue, void **data, unsigned max_count)
 {
+	uint64_t tmp;
+	int save_errno = errno;
+	while (read(queue->filedes[0], &tmp, sizeof(tmp)) > 0)
+		;
+	assert(errno == EAGAIN);
+	errno = save_errno;
 	unsigned cnt = lock_free_fifo_get(queue->fifo, data, max_count);
 	pm_atomic_fetch_sub(&queue->n_input, cnt);
 	return cnt;
