@@ -6,7 +6,6 @@
 #include <uv.h>
 
 #define XTM_FIFO_SIZE 16
-#define XTM_FIFO_MAX_INPUT 8
 
 struct msg {
 	pthread_t self;
@@ -31,11 +30,13 @@ uv_read_pipe(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf)
 	void *data[XTM_FIFO_SIZE];
 	if (nread > 0) {
 		struct xtm_queue *queue = ((uv_handle_t *)client)->data;
-		unsigned count = xtm_msg_recv(queue, data, XTM_FIFO_SIZE);
-		for (unsigned i = 0; i < count; i++) {
-			struct msg *msg = (struct msg *)data[i];
-			fprintf(stderr, "Thread %p received: %p %llu\n", pthread_self(), msg->self, msg->counter);
-			free(msg);
+		unsigned count;
+		while ((count = xtm_msg_recv(queue, data, XTM_FIFO_SIZE)) != 0) {
+			for (unsigned i = 0; i < count; i++) {
+				struct msg *msg = (struct msg *)data[i];
+				fprintf(stderr, "Thread %p received: %p %llu\n", pthread_self(), msg->self, msg->counter);
+				free(msg);
+			}
 		}
 	}
 	if (buf->base)
@@ -72,12 +73,12 @@ thread_func(void *data)
 	struct xtm_queue *queue_in = NULL, *queue_out = NULL;
 
 	if (data == (void *)1) {
-		queue_in = q1 = xtm_create(XTM_FIFO_SIZE, XTM_FIFO_MAX_INPUT);
+		queue_in = q1 = xtm_create(XTM_FIFO_SIZE);
 		while ((queue_out = q2) == NULL)
 			;
 		t1 = pthread_self();
 	} else if (data == (void *)2) {
-		queue_in = q2 = xtm_create(XTM_FIFO_SIZE, XTM_FIFO_MAX_INPUT);
+		queue_in = q2 = xtm_create(XTM_FIFO_SIZE);
 		while ((queue_out = q1) == NULL)
 			;
 		t2 = pthread_self();
