@@ -1,4 +1,4 @@
-#include "module_api.h"
+#include "module_api_c.h"
 #include "fifo.h"
 
 #include <sys/eventfd.h>

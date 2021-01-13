@@ -1,4 +1,4 @@
-#include "module_api_c.h"
+#include "module_api.h"
 #include "pmatomic.h"
 
 #include <pthread.h>
@@ -43,9 +43,8 @@ alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf)
 static void
 uv_read_pipe(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf)
 {
-	void *data[XTM_FIFO_SIZE];
 	if (nread > 0) {
-		struct xtm_queue *queue = ((uv_handle_t *)client)->data;
+		struct xtm_queue *queue = (struct xtm_queue *)((uv_handle_t *)client)->data;
 		while (xtm_fun_invoke(queue))
 			;
 	}
@@ -57,7 +56,7 @@ static void
 uv_enqueue_message(uv_timer_t* handle)
 {
 	static unsigned long long counter_1, counter_2;
-	struct xtm_queue *queue = ((uv_handle_t *)handle)->data;
+	struct xtm_queue *queue = (struct xtm_queue *)((uv_handle_t *)handle)->data;
 	struct msg *msg = (struct msg *)malloc(sizeof(struct msg));
 	if (msg == NULL)
 		return;

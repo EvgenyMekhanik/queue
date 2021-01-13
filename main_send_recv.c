@@ -1,4 +1,4 @@
-#include "module_api.h"
+#include "module_api_c.h"
 #include "pmatomic.h"
 
 #include <pthread.h>
