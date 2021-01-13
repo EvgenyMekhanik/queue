@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <uv.h>
+#include <unistd.h>
 
 #define XTM_FIFO_SIZE 16
 
@@ -16,6 +17,14 @@ static struct xtm_queue *q1;
 static struct xtm_queue *q2;
 static pthread_t t1;
 static pthread_t t2;
+static uv_loop_t *l1, *l2;
+
+static void
+alarm_sig_handler(int signum)
+{
+	uv_stop(l1);
+	uv_stop(l2);
+}
 
 static void
 alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf)
@@ -77,11 +86,13 @@ thread_func(void *data)
 		while ((queue_out = q2) == NULL)
 			;
 		t1 = pthread_self();
+		l1 = &uvloop;
 	} else if (data == (void *)2) {
 		queue_in = q2 = xtm_create(XTM_FIFO_SIZE);
 		while ((queue_out = q1) == NULL)
 			;
 		t2 = pthread_self();
+		l2 = &uvloop;
 	}
 
 	if (queue_in == NULL)
@@ -94,7 +105,7 @@ thread_func(void *data)
 	((uv_handle_t *)&pipe)->data = queue_in;
 	uv_read_start((uv_stream_t*)&pipe, alloc_buffer_cb, uv_read_pipe);
 	uv_timer_init(&uvloop, &timer);
-	uv_timer_start(&timer, uv_enqueue_message, 0, 100);
+	uv_timer_start(&timer, uv_enqueue_message, 0, 1);
 	((uv_handle_t *)&timer)->data = queue_out;
 	uv_run(&uvloop, UV_RUN_DEFAULT);
 	uv_timer_stop(&timer);
@@ -117,7 +128,8 @@ int main()
 		pthread_join(thread_1, NULL);
 		return EXIT_FAILURE;
 	}
-
+	alarm(10);
+	signal(SIGALRM, alarm_sig_handler);
 	pthread_join(thread_1, NULL);
 	pthread_join(thread_2, NULL);
 	return EXIT_SUCCESS;
